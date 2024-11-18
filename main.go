@@ -1,14 +1,19 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"sync/atomic"
+	"github.com/ablanchetMD/chirpy/internal/database"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
+	Db *database.Queries
 	fileserverHits uint64
 }
 
@@ -28,17 +33,28 @@ func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Count reset to 0"))
 }
 
+func middlewareLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("%s %s", r.Method, r.URL.Path)
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	cfg := &apiConfig{}
-	db, err := NewDB("db.json")
+	godotenv.Load(".env")
+	db, err := sql.Open("postgres", os.Getenv("DB_URL"))
 	if err != nil {
-		fmt.Println("Error creating database: ", err)
+		fmt.Println("Error fetching database: ", err)
 		return
 	}
-	db.ensureDB()
+	defer db.Close()
+	dbQueries := database.New(db)
+	cfg.Db = dbQueries
 	mux := http.NewServeMux()
 	fileserver := http.FileServer(http.Dir("."))
-	mux.Handle("/app/*", http.StripPrefix("/app/", fileserver))
+	mux.Handle("/app/", http.StripPrefix("/app", fileserver))
+
 	handlerReadiness := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
@@ -46,10 +62,10 @@ func main() {
 	}
 	mux.HandleFunc("GET /api/healthz", handlerReadiness)
 
-	mux.HandleFunc("POST /api/users", db.handleUsers)
+	// mux.HandleFunc("POST /api/users", db.handleUsers)
 
-	mux.HandleFunc("POST /api/login", db.handleLogin)
-	
+	// mux.HandleFunc("POST /api/login", db.handleLogin)
+
 	mux.HandleFunc("GET /admin/metrics", func(w http.ResponseWriter, r *http.Request) {
 		data, err := os.ReadFile("./admin/index.html")
 		if err != nil {
@@ -61,13 +77,13 @@ func main() {
 		w.Write([]byte(fmt.Sprintf(string(data), atomic.LoadUint64(&cfg.fileserverHits))))
 	})
 
-	mux.HandleFunc("/api/chirps", db.handleChirps)
+	// mux.HandleFunc("/api/chirps", db.handleChirps)
 
-	mux.HandleFunc("GET /api/chirps/", db.serverGetChirps)
+	// mux.HandleFunc("GET /api/chirps/", db.serverGetChirps)
 
 	mux.HandleFunc("/api/reset", cfg.resetHandler)
 
-	wrappedMux := cfg.middlewareMetricsInc(mux)
+	wrappedMux := middlewareLog(cfg.middlewareMetricsInc(mux))
 	portString := "8080"
 	srv := &http.Server{
 		Addr:    ":" + portString,

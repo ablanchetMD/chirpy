@@ -14,6 +14,7 @@ import (
 
 type apiConfig struct {
 	Db *database.Queries
+	Platform string
 	fileserverHits uint64
 }
 
@@ -51,6 +52,8 @@ func main() {
 	defer db.Close()
 	dbQueries := database.New(db)
 	cfg.Db = dbQueries
+	cfg.Platform = os.Getenv("PLATFORM")
+
 	mux := http.NewServeMux()
 	fileserver := http.FileServer(http.Dir("."))
 	mux.Handle("/app/", http.StripPrefix("/app", fileserver))
@@ -62,8 +65,13 @@ func main() {
 	}
 	mux.HandleFunc("GET /api/healthz", handlerReadiness)
 
-	// mux.HandleFunc("POST /api/users", db.handleUsers)
+	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, r *http.Request) {
+		handleCreateUser(cfg, w, r)
+	})
 
+	mux.HandleFunc("POST /admin/reset", func(w http.ResponseWriter, r *http.Request) {
+		handleReset(cfg, w, r)
+	})
 	// mux.HandleFunc("POST /api/login", db.handleLogin)
 
 	mux.HandleFunc("GET /admin/metrics", func(w http.ResponseWriter, r *http.Request) {
@@ -77,9 +85,16 @@ func main() {
 		w.Write([]byte(fmt.Sprintf(string(data), atomic.LoadUint64(&cfg.fileserverHits))))
 	})
 
-	// mux.HandleFunc("/api/chirps", db.handleChirps)
+	 mux.HandleFunc("POST /api/chirps", func(w http.ResponseWriter, r *http.Request) {
+		handleCreateChirp(cfg, w, r)
+	})
 
-	// mux.HandleFunc("GET /api/chirps/", db.serverGetChirps)
+	 mux.HandleFunc("GET /api/chirps", func(w http.ResponseWriter, r *http.Request) {
+		handleGetChirps(cfg, w, r)
+	})
+	mux.HandleFunc("/api/chirps/{chirpID}", func(w http.ResponseWriter, r *http.Request) {
+		handleGetChirp(cfg, w, r)
+	})
 
 	mux.HandleFunc("/api/reset", cfg.resetHandler)
 

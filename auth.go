@@ -6,10 +6,28 @@ import (
 	"io"
 	"net/http"
 	"time"
+	"github.com/google/uuid"
+	
 
 	"github.com/ablanchetMD/chirpy/internal/database"
 	// "golang.org/x/crypto/bcrypt"
 )
+
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
+}
+
+func mapUserStruct(src database.User) User {
+	return User{
+		ID:        src.ID,
+		CreatedAt: src.CreatedAt,
+		UpdatedAt: src.UpdatedAt,
+		Email:     src.Email,
+	}    
+}
 
 func handleCreateUser(c *apiConfig, w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
@@ -52,8 +70,23 @@ func handleCreateUser(c *apiConfig, w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Error creating user")
 		return
 	}
+	
 	// user.Password = nil
-	respondWithJSON(w, http.StatusCreated, user)
+	respondWithJSON(w, http.StatusCreated, mapUserStruct(user))
+}
+
+func handleReset(c *apiConfig, w http.ResponseWriter, r *http.Request) {
+	if c.Platform != "dev" {
+		respondWithError(w, http.StatusForbidden, "You are not authorized to use this function.")
+		return
+	}
+
+	err := c.Db.DeleteUsers(r.Context())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error deleting users")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, "Users deleted")
 }
 
 // func (db *DB) CreateUser(email string, password string) (User, error) {

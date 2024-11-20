@@ -1,64 +1,97 @@
 package main
 
 import (
-	// "encoding/json"
-	// "fmt"
-	// "io"
-	// "net/http"
-	// "os"
+	 "encoding/json"
+	 "fmt"
+	 "io"
+	 "net/http"
+	 "github.com/google/uuid"
+	 "github.com/ablanchetMD/chirpy/internal/database"
+	 "time"
+	 "database/sql"
 	// "sort"
 	// "strconv"
 	// "strings"
 		
 )
 
+
 type Chirp struct {
-	Id   int    `json:"id"`
-	Body string `json:"body"`
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
 }
 
-// func (db *DB) CreateChirp(body string) (Chirp, error) {
-// 	db.mux.Lock()
-// 	defer db.mux.Unlock()
+func mapChirpStruct(src database.Chirp) Chirp {
+	return Chirp{
+		ID:        src.ID,
+		CreatedAt: src.CreatedAt,
+		UpdatedAt: src.UpdatedAt,
+		Body:      src.Body,
+		UserID:    src.UserID,
+	}
+}
 
-// 	data, err := db.loadDB()
-// 	chirp := Chirp{}
-// 	if err != nil {
-// 		// If the database file is empty, we initialize the Chirps map
-// 		if err.Error() == "database file is empty" {
-// 			data.Chirps = make(map[int]Chirp)
-// 		} else {
-// 			return chirp, err
-// 		}
-// 	}
-// 	// Find the next ID
-// 	nextID := 1
-// 	for id := range data.Chirps {
-// 		if id >= nextID {
-// 			nextID = id + 1
-// 		}
-// 	}
-// 	chirp = Chirp{Id: nextID, Body: body}
-// 	data.Chirps[nextID] = chirp
-// 	err = db.writeDB(data)
-// 	if err != nil {
-// 		return chirp, err
-// 	}
-// 	return chirp, nil
+func handleCreateChirp(c *apiConfig, w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Error reading request body", http.StatusInternalServerError)
+		respondWithError(w, http.StatusBadRequest, "No body in request")
+		return
+	}
+	defer r.Body.Close()
 
-// }
+	var requestData map[string]string
+	err = json.Unmarshal(body, &requestData)
+	if err != nil {		
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
 
-// func (db *DB) handleChirps(w http.ResponseWriter, r *http.Request) {
-// 	switch r.Method {
-// 	case http.MethodGet:
-// 		db.serverGetChirps(w, r)
-// 	case http.MethodPost:
-// 		db.serverPostChirps(w, r)
-// 	default:
-// 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-// 		respondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
-// 	}
-// }
+	content, ok := requestData["body"]
+	if !ok {		
+		respondWithError(w, http.StatusBadRequest, "Missing body field")
+		return
+	}
+
+	user_id, ok := requestData["user_id"]
+	if !ok {		
+		respondWithError(w, http.StatusBadRequest, "Missing user_id field")
+		return
+	}
+	parsed_id, err := uuid.Parse(user_id)
+	if err != nil {		
+		respondWithError(w, http.StatusBadRequest, "Invalid user_id field")
+		return
+	}
+
+	replacementWords := []string{"kerfuffle", "sharbert", "fornax"}
+	cleaned_body := replaceWords(string(content), replacementWords, "****")
+	bodyLength := len(content)
+
+	if bodyLength > 140 {
+		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
+		return
+	}
+	fmt.Println("Adding chirp to database: ", cleaned_body)
+	chirp, err := c.Db.CreateChirp(r.Context(), database.CreateChirpParams{
+		Body: cleaned_body,		
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID: parsed_id,
+	})
+	if err != nil {
+		
+		fmt.Println("Error creating chirp: ", err)
+		respondWithError(w, http.StatusInternalServerError, "Error creating chirp")
+		return
+	}
+	
+	// user.Password = nil
+	respondWithJSON(w, http.StatusCreated, mapChirpStruct(chirp))
+}
 
 // func (db *DB) handleLogin(w http.ResponseWriter, r *http.Request) {
 // 	body, err := io.ReadAll(r.Body)
@@ -100,47 +133,49 @@ type Chirp struct {
 
 // }
 
-// func (db *DB) serverPostChirps(w http.ResponseWriter, r *http.Request) {
-// 	body, err := io.ReadAll(r.Body)
-// 	if err != nil {
-// 		http.Error(w, "Error reading request body", http.StatusInternalServerError)
-// 		respondWithError(w, http.StatusBadRequest, "No body in request")
-// 		return
-// 	}
-// 	defer r.Body.Close()
+func handleGetChirps(c *apiConfig, w http.ResponseWriter, r *http.Request) {
+	
 
-// 	var requestData map[string]string
-// 	err = json.Unmarshal(body, &requestData)
-// 	if err != nil {
-// 		http.Error(w, "Invalid request body", http.StatusBadRequest)
-// 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
-// 		return
-// 	}
-// 	//convert body to Go object
-// 	content, ok := requestData["body"]
-// 	if !ok {
-// 		http.Error(w, "Missing content field", http.StatusBadRequest)
-// 		respondWithError(w, http.StatusBadRequest, "Missing content field")
-// 		return
-// 	}
-// 	replacementWords := []string{"kerfuffle", "sharbert", "fornax"}
-// 	cleaned_body := replaceWords(string(content), replacementWords, "****")
-// 	bodyLength := len(content)
+	chirps, err := c.Db.GetChirps(r.Context())
+	if err != nil {
+		fmt.Println("Error getting chirp: ", err)
+		respondWithError(w, http.StatusInternalServerError, "Error getting chirps")
+		return
+	}
+	var chirpStructs []Chirp
+	for _, chirp := range chirps {
+		chirpStructs = append(chirpStructs, mapChirpStruct(chirp))
+	}
+	respondWithJSON(w, http.StatusOK, chirpStructs)
+}
 
-// 	if bodyLength > 140 {
-// 		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
-// 		return
-// 	}
-// 	fmt.Println("Adding chirp to database: ", cleaned_body)
-// 	chirp, err := db.CreateChirp(cleaned_body)
-// 	if err != nil {
-// 		fmt.Println("Error creating chirp: ", err)
-// 		respondWithError(w, http.StatusInternalServerError, "Error creating chirp")
-// 		return
-// 	}
-// 	respondWithJSON(w, http.StatusCreated, chirp)
+func handleGetChirp(c *apiConfig, w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("chirpID")
+    if len(id) == 0 {
+        respondWithError(w, http.StatusBadRequest,"Chirp ID not provided")
+        return
+    }
 
-// }
+	parsed_id, err := uuid.Parse(id)
+	if err != nil {		
+		respondWithError(w, http.StatusBadRequest, "Invalid id field")
+		return
+	}
+    
+	chirp, err := c.Db.GetChirp(r.Context(),parsed_id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			fmt.Println("No chirp with that id: ", err)
+			respondWithError(w, http.StatusNotFound, "No Chirp with that id")
+			return
+		} 
+		fmt.Println("Error getting chirp: ", err)
+		respondWithError(w, http.StatusInternalServerError, "Error getting chirp")
+		return
+	}
+	 
+	respondWithJSON(w, http.StatusOK, mapChirpStruct(chirp))
+}
 
 // func (db *DB) serverGetChirps(w http.ResponseWriter, r *http.Request) {
 // 	pathParts := strings.Split(r.URL.Path, "/")

@@ -6,11 +6,11 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/ablanchetMD/chirpy/internal/auth"
 	"github.com/google/uuid"
-	
 
 	"github.com/ablanchetMD/chirpy/internal/database"
-	// "golang.org/x/crypto/bcrypt"
 )
 
 type User struct {
@@ -26,13 +26,12 @@ func mapUserStruct(src database.User) User {
 		CreatedAt: src.CreatedAt,
 		UpdatedAt: src.UpdatedAt,
 		Email:     src.Email,
-	}    
+	}
 }
 
 func handleCreateUser(c *apiConfig, w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Error reading request body", http.StatusInternalServerError)
 		respondWithError(w, http.StatusBadRequest, "No body in request")
 		return
 	}
@@ -41,37 +40,39 @@ func handleCreateUser(c *apiConfig, w http.ResponseWriter, r *http.Request) {
 	var requestData map[string]string
 	err = json.Unmarshal(body, &requestData)
 	if err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	email, ok := requestData["email"]
 	if !ok {
-		http.Error(w, "Missing email field", http.StatusBadRequest)
 		respondWithError(w, http.StatusBadRequest, "Missing email field")
 		return
 	}
-	// password, ok := requestData["password"]
-	// if !ok {
-	// 	http.Error(w, "Missing password field", http.StatusBadRequest)
-	// 	respondWithError(w, http.StatusBadRequest, "Missing password field")
-	// 	return
-	// }
+	password, ok := requestData["password"]
+	if !ok {
+		respondWithError(w, http.StatusBadRequest, "Missing password field")
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(password)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error hashing password")
+		return
+	}
+
 	fmt.Println("Adding user to database: ", email)
 	user, err := c.Db.CreateUser(r.Context(), database.CreateUserParams{
-		Email: email,
+		Email:     email,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
-
+		Password:  hashedPassword,
 	})
 	if err != nil {
 		fmt.Println("Error creating user: ", err)
 		respondWithError(w, http.StatusInternalServerError, "Error creating user")
 		return
 	}
-	
-	// user.Password = nil
 	respondWithJSON(w, http.StatusCreated, mapUserStruct(user))
 }
 
@@ -89,51 +90,48 @@ func handleReset(c *apiConfig, w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, "Users deleted")
 }
 
-// func (db *DB) CreateUser(email string, password string) (User, error) {
-// 	db.mux.Lock()
-// 	defer db.mux.Unlock()
+func handleLogin(c *apiConfig, w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "No body in request")
+		return
+	}
+	defer r.Body.Close()
 
-// 	data, err := db.loadDB()
-// 	user := User{}
-// 	if err != nil {
-// 		// If the database file is empty, we initialize the Chirps map
-// 		if err.Error() == "database file is empty" {
-// 			data.Users = make(map[int]User)
-// 		} else {
-// 			return user, err
-// 		}
-// 	}
-// 	// Find the next ID
-// 	nextID := 1
-// 	for id := range data.Users {
-// 		if id >= nextID {
-// 			nextID = id + 1
-// 		}
-// 	}
-// 	if len(data.Users) == 0 {
-// 		data.Users = make(map[int]User)
-// 	}
+	var requestData map[string]string
+	err = json.Unmarshal(body, &requestData)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
 
-// 	findEmail, err := db.findEmail(email)
-// 	if findEmail.Email != "" {
-// 		return user, fmt.Errorf("User with email %s already exists", email)
-// 	}
+	email, ok := requestData["email"]
+	if !ok {
+		respondWithError(w, http.StatusBadRequest, "Please include an email field")
+		return
+	}
+	password, ok := requestData["password"]
+	if !ok {
+		respondWithError(w, http.StatusBadRequest, "Please include a password field")
+		return
+	}
+	user, err := c.Db.GetUserByEmail(r.Context(), email)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Password or email is invalid.")
+		return
+	}
+	err = auth.CheckPasswordHash(password, user.Password)
 
-// 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Password or email is invalid.")
+		return
+	}
 
-// 	if err != nil {
-// 		return user, err
-// 	}
+	// user.Password = nil
 
-// 	user = User{Id: nextID, Email: email, Password: hashedPassword}
-// 	data.Users[nextID] = user
-// 	err = db.writeDB(data)
-// 	if err != nil {
-// 		return user, err
-// 	}
-// 	return user, nil
+	respondWithJSON(w, http.StatusOK, mapUserStruct(user))
 
-// }
+}
 
 // func (db *DB) findEmail(email string) (User, error) {
 // 	user := User{}
@@ -168,5 +166,3 @@ func handleReset(c *apiConfig, w http.ResponseWriter, r *http.Request) {
 // 	return findUser, nil
 
 // }
-
-

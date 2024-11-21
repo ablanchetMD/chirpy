@@ -93,45 +93,7 @@ func handleCreateChirp(c *apiConfig, w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, mapChirpStruct(chirp))
 }
 
-// func (db *DB) handleLogin(w http.ResponseWriter, r *http.Request) {
-// 	body, err := io.ReadAll(r.Body)
-// 	if err != nil {
-// 		http.Error(w, "Error reading request body", http.StatusInternalServerError)
-// 		respondWithError(w, http.StatusBadRequest, "No body in request")
-// 		return
-// 	}
-// 	defer r.Body.Close()
 
-// 	var requestData map[string]string
-// 	err = json.Unmarshal(body, &requestData)
-// 	if err != nil {
-// 		http.Error(w, "Invalid request body", http.StatusBadRequest)
-// 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
-// 		return
-// 	}
-
-// 	email, ok := requestData["email"]
-// 	if !ok {
-// 		respondWithError(w, http.StatusBadRequest, "Please include an email field")
-// 		return
-// 	}
-// 	password, ok := requestData["password"]
-// 	if !ok {
-// 		respondWithError(w, http.StatusBadRequest, "Please include a password field")
-// 		return
-// 	}
-// 	loggedUser, err := db.verifyLogin(email, password)
-
-// 	if err != nil {
-// 		respondWithError(w, http.StatusUnauthorized, "Password or email is invalid.")
-// 		return
-// 	}
-
-// 	loggedUser.Password = nil
-
-// 	respondWithJSON(w, http.StatusOK, loggedUser)
-
-// }
 
 func handleGetChirps(c *apiConfig, w http.ResponseWriter, r *http.Request) {
 	

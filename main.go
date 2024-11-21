@@ -72,7 +72,11 @@ func main() {
 	mux.HandleFunc("POST /admin/reset", func(w http.ResponseWriter, r *http.Request) {
 		handleReset(cfg, w, r)
 	})
-	// mux.HandleFunc("POST /api/login", db.handleLogin)
+
+	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
+		handleLogin(cfg, w, r)
+	})
+	// mux.HandleFunc("POST /api/login", db.handleLogin)handleLogin
 
 	mux.HandleFunc("GET /admin/metrics", func(w http.ResponseWriter, r *http.Request) {
 		data, err := os.ReadFile("./admin/index.html")
